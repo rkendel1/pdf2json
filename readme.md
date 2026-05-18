@@ -4,6 +4,22 @@ pdf2json is a [node.js](http://nodejs.org/) module that parses and converts PDF 
 
 The goal is to enable server side PDF parsing with interactive form elements when wrapped in web service, and also enable parsing local PDF to json file when using as a command line utility.
 
+## Capabilities at a Glance
+
+`pdf2json` provides:
+
+* Core PDF-to-JSON parsing with document metadata and page primitives (`HLines`, `VLines`, `Fills`, `Texts`, `Fields`, `Boxsets`)
+* Event-driven parsing APIs (`pdfParser_dataReady`, `pdfParser_dataError`, `readable`, `data`, `error`)
+* Raw text extraction (`getRawTextContent`, `getRawTextContentStream`)
+* Interactive form field/type extraction (`getAllFieldsTypes`, `getAllFieldsTypesStream`)
+* Broken text block post-processing (`getMergedTextBlocksIfNeeded`, `getMergedTextBlocksStream`)
+* Heuristic document semantics post-processing (`getDocumentSemantics`, `getDocumentSemanticsStream`) that groups parsed text into sections and semantic elements (headings/paragraphs)
+* CLI processing for files/directories with optional additional artifacts (`.fields.json`, `.content.txt`, `.merged.json`)
+
+### Semantics Note
+
+PDF files do not natively store semantic structure such as "heading", "paragraph", or "section" in a reliable way for all documents. The `getDocumentSemantics*` APIs infer semantics heuristically from parsed text/style data as a post-processing step.
+
 ## Install
 
 >npm install pdf2json
@@ -175,77 +191,131 @@ See [p2jcmd.js](https://github.com/modesty/pdf2json/blob/master/lib/p2jcmd.js) f
 ## API Reference
 
 * events:
-    * pdfParser_dataError: will be raised when parsing failed
-    * pdfParser_dataReady: when parsing succeeded
+    * `pdfParser_dataError`: raised when parsing failed, payload shape: `{ parserError: errObj }`
+    * `pdfParser_dataReady`: raised when parsing succeeded, payload shape: `Output` (see Output format reference)
 
-* alternative events: (v2.0.0)
-    * readable: first event dispatched after PDF file metadata is parsed and before processing any page
-    * data: one parsed page succeeded, null means last page has been processed, signle end of data stream
-    * error: exception or error occured
+* alternative events (v2.0.0+):
+    * `readable`: first event dispatched after PDF metadata is parsed and before page processing
+    * `data`: one parsed page object; `null` means all pages are processed
+    * `error`: exception or parse error
 
-* start to parse PDF file from specified file path asynchronously:
+* start parsing PDF from specified file path asynchronously:
 ````javascript
         function loadPDF(pdfFilePath);
 ````
-If failed, event "pdfParser_dataError" will be raised with error object: {"parserError": errObj};
-If success, event "pdfParser_dataReady" will be raised with output data object: {"formImage": parseOutput}, which can be saved as json file (in command line) or serialized to json when running in web service. __note__: "formImage" is removed from v2.0.0, see breaking changes for details.
+If failed, `pdfParser_dataError` is raised. If succeeded, `pdfParser_dataReady` is raised with parsed output data.
 
-* Get all textual content from "pdfParser_dataReady" event handler:
+* parse from an in-memory buffer:
+````javascript
+        function parseBuffer(pdfBuffer);
+````
+
+* get all textual content from `pdfParser_dataReady` event handler:
 ````javascript
         function getRawTextContent();
 ````
-returns text in string.
+returns text as a string.
 
-* Get all input fields information from "pdfParser_dataReady" event handler: 
+* stream variant:
+````javascript
+        function getRawTextContentStream();
+````
+
+* get all input fields information from `pdfParser_dataReady` event handler:
 ````javascript
         function getAllFieldsTypes();
-````        
-returns an array of field objects.         
+````
+returns an array of field objects.
 
+* stream variant:
+````javascript
+        function getAllFieldsTypesStream();
+````
+
+* get text-block merged output (post-processing):
+````javascript
+        function getMergedTextBlocksIfNeeded();
+        function getMergedTextBlocksStream();
+````
+
+* get section + semantics output (post-processing):
+````javascript
+        function getDocumentSemantics();
+        function getDocumentSemanticsStream();
+````
+ 
 ## Output format Reference
 
-Current parsed data has four main sub objects to describe the PDF document.
+Current parsed root output shape (v2.0.0+) has three main fields:
 
-* 'Transcoder': pdf2json version number
-* 'Agency': the main text identifier for the PDF document. If Id.AgencyId present, it'll be same, otherwise it'll be set as document title; (_deprecated since v2.0.0, see notes below_)
-* 'Id': the XML meta data that embedded in PDF document (_deprecated since v2.0.0, see notes below_)
-    * all forms attributes metadata are defined in "Custom" tab of "Document Properties" dialog in Acrobat Pro;
-    * v0.1.22 added support for the following custom properties:
-        * AgencyId: default "unknown";
-        * Name: default "unknown";
-        * MC: default false;
-        * Max: default -1;
-        * Parent: parent name, default "unknown";
-    * *_v2.0.0_*: 'Agency' and 'Id' are replaced with full metadata, example: for `./test/pdf/fd/form/F1040.pdf`, full metadata is:
-  ````json
-        Meta: {
-            PDFFormatVersion: '1.7',
-            IsAcroFormPresent: true,
-            IsXFAPresent: false,
-            Author: 'SE:W:CAR:MP',
-            Subject: 'U.S. Individual Income Tax Return',
-            Creator: 'Adobe Acrobat Pro 10.1.8',
-            Producer: 'Adobe Acrobat Pro 10.1.8',
-            CreationDate: "D:20131203133943-08'00'",
-            ModDate: "D:20140131180702-08'00'",
-            Metadata: {
-                'xmp:modifydate': '2014-01-31T18:07:02-08:00',
-                'xmp:createdate': '2013-12-03T13:39:43-08:00',
-                'xmp:metadatadate': '2014-01-31T18:07:02-08:00',
-                'xmp:creatortool': 'Adobe Acrobat Pro 10.1.8',
-                'dc:format': 'application/pdf',
-                'dc:description': 'U.S. Individual Income Tax Return',
-                'dc:creator': 'SE:W:CAR:MP',
-                'xmpmm:documentid': 'uuid:4d81e082-7ef2-4df7-b07b-8190e5d3eadf',
-                'xmpmm:instanceid': 'uuid:7ea96d1c-3d2f-284a-a469-f0f284a093de',
-                'pdf:producer': 'Adobe Acrobat Pro 10.1.8',
-                'adhocwf:state': '1',
-                'adhocwf:version': '1.1'
-            }
+* `Transcoder`: parser signature/version string
+* `Meta`: full PDF metadata object
+* `Pages`: array of page objects (`Width`, `Height`, `HLines`, `VLines`, `Fills`, `Texts`, `Fields`, `Boxsets`)
+
+Example:
+````json
+{
+  "Transcoder": "pdf2json@<version>",
+  "Meta": {
+    "PDFFormatVersion": "1.7",
+    "IsAcroFormPresent": true,
+    "IsXFAPresent": false,
+    "Title": "Example"
+  },
+  "Pages": [
+    {
+      "Width": 38.25,
+      "Height": 49.5,
+      "HLines": [],
+      "VLines": [],
+      "Fills": [],
+      "Texts": [],
+      "Fields": [],
+      "Boxsets": []
+    }
+  ]
+}
+````
+
+Legacy note: pre-v2 output included `Agency` and `Id`; these were replaced by `Meta` in v2.0.0.
+
+### Post-Processed Semantics Output
+
+`getDocumentSemantics()` and `getDocumentSemanticsStream()` return a post-processed structure:
+
+````json
+{
+  "Sections": [
+    {
+      "title": "Section title or null",
+      "level": 0,
+      "pageIndex": 0,
+      "content": [
+        {
+          "type": "heading",
+          "level": 1,
+          "text": "Section title",
+          "pageIndex": 0,
+          "x": 3.2,
+          "y": 5.4
+        },
+        {
+          "type": "paragraph",
+          "text": "Paragraph text",
+          "pageIndex": 0,
+          "x": 3.2,
+          "y": 6.0
         }
-  ````   
-* 'Pages': array of 'Page' object that describes each page in the PDF, including sizes, lines, fills and texts within the page. More info about 'Page' object can be found at 'Page Object Reference' section
-* 'Width': the PDF page width in page unit
+      ]
+    }
+  ]
+}
+````
+
+Notes:
+* Semantics are inferred heuristically from parsed text/style data.
+* Heading levels are derived from relative font size/boldness.
+* This is a post-processing layer on top of core parser output, not native semantic data from PDF.
 
 
 ### Page object Reference

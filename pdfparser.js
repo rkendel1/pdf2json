@@ -144,6 +144,9 @@ export default class PDFParser extends EventEmitter { // inherit from event emit
 	getMergedTextBlocksIfNeeded() { return this.#PDFJS.getMergedTextBlocksIfNeeded(); }
 	getMergedTextBlocksStream() { return ParserStream.createContentStream(this.getMergedTextBlocksIfNeeded()) }
 
+	getDocumentSemantics() { return this.#PDFJS.getDocumentSemantics(); }
+	getDocumentSemanticsStream() { return ParserStream.createContentStream(this.getDocumentSemantics()); }
+
 	destroy() { // invoked with stream transform process		
         super.removeAllListeners();
 
