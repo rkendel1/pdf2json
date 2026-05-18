@@ -1,4 +1,5 @@
 import {EventEmitter} from "events";
+import {Readable} from "stream";
 
 declare class Pdfparser extends EventEmitter{
     constructor();
@@ -6,6 +7,14 @@ declare class Pdfparser extends EventEmitter{
     loadPDF(pdfFilePath: string, verbosity?: number):Promise<void>
     createParserStream():ParserStream
     on<K extends keyof EventMap>(eventName: K, listener: EventMap[K]): this
+    getRawTextContent(): string;
+    getRawTextContentStream(): Readable;
+    getAllFieldsTypes(): object;
+    getAllFieldsTypesStream(): Readable;
+    getMergedTextBlocksIfNeeded(): Output;
+    getMergedTextBlocksStream(): Readable;
+    getDocumentSemantics(): DocumentSemantics;
+    getDocumentSemanticsStream(): Readable;
 }
 
 type EventMap = {
@@ -125,6 +134,26 @@ declare interface Box {
     AM: number;
     checked?: boolean;
     style: number
+}
+
+export interface SemanticElement {
+    type: 'heading' | 'paragraph';
+    text: string;
+    pageIndex: number;
+    x: number;
+    y: number;
+    level?: number | null;
+}
+
+export interface Section {
+    title: string | null;
+    level: number;
+    pageIndex: number;
+    content: SemanticElement[];
+}
+
+export interface DocumentSemantics {
+    Sections: Section[];
 }
 
 export default Pdfparser

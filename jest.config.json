@@ -1,4 +1,4 @@
 {
-    "testMatch": ["**/test/_test_cli.cjs"],
+    "testMatch": ["**/test/_test_cli.mjs"],
     "testTimeout": 60000
 }
